@@ -1,1 +1,1 @@
-CODEOWNERS = ["@Petapton"]
+CODEOWNERS = ["@Petapton","@rawframe"]

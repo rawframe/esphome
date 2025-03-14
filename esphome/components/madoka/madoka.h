@@ -94,9 +94,9 @@ class Madoka : public climate::Climate, public esphome::ble_client::BLEClientNod
     });
     traits.set_supported_fan_modes({
         climate::CLIMATE_FAN_LOW,
-        climate::CLIMATE_FAN_MEDIUM,
+        // climate::CLIMATE_FAN_MEDIUM,
         climate::CLIMATE_FAN_HIGH,
-        climate::CLIMATE_FAN_AUTO,
+        // climate::CLIMATE_FAN_AUTO,
     });
     traits.set_visual_min_temperature(16);
     traits.set_visual_max_temperature(32);
@@ -106,6 +106,8 @@ class Madoka : public climate::Climate, public esphome::ble_client::BLEClientNod
     return traits;
   }
   void set_unit_of_measurement(const char *);
+  // Add this method declaration for dismissing clean filter indicator 
+  void disable_clean_filter_indicator();
 };
 
 }  // namespace madoka

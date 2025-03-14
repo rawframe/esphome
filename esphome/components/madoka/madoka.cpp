@@ -42,22 +42,27 @@ void Madoka::control(const ClimateCall &call) {
     switch (mode) {
       case climate::CLIMATE_MODE_OFF:
         status_out = 0;
+        ESP_LOGD(TAG, "** Climate Mode - OFF called");
         break;
       case climate::CLIMATE_MODE_HEAT_COOL:
         status_out = 1;
         mode_out = 2;
+        ESP_LOGD(TAG, "** Climate Mode - HEAT_COOL (Auto) called");
         break;
       case climate::CLIMATE_MODE_COOL:
         status_out = 1;
         mode_out = 3;
+        ESP_LOGD(TAG, "** Climate Mode - COOL called");
         break;
       case climate::CLIMATE_MODE_HEAT:
         status_out = 1;
         mode_out = 4;
+        ESP_LOGD(TAG, "** Climate Mode - HEAT called");
         break;
       case climate::CLIMATE_MODE_FAN_ONLY:
         status_out = 1;
         mode_out = 0;
+        ESP_LOGD(TAG, "** Climate Mode - Fan Only called");
         break;
       case climate::CLIMATE_MODE_DRY:
         status_out = 1;
@@ -73,6 +78,7 @@ void Madoka::control(const ClimateCall &call) {
     }
     this->query_(0x4020, message({0x20, 0x01, (uint8_t) status_out}), 200);
   }
+  // Set the target temperatures
   if (call.get_target_temperature_low().has_value() && call.get_target_temperature_high().has_value()) {
     uint16_t target_low = *call.get_target_temperature_low() * 128;
     uint16_t target_high = *call.get_target_temperature_high() * 128;
@@ -80,7 +86,21 @@ void Madoka::control(const ClimateCall &call) {
                  message({0x20, 0x02, (uint8_t) ((target_high >> 8) & 0xFF), (uint8_t) (target_high & 0xFF), 0x21, 0x02,
                           (uint8_t) ((target_low >> 8) & 0xFF), (uint8_t) (target_low & 0xFF)}),
                  400);
+    ESP_LOGI(TAG, "** Climate Temp LOW & HiGH - called");
+  } else if (call.get_target_temperature_low().has_value()) {
+    uint16_t target_low = *call.get_target_temperature_low() * 128;
+    this->query_(0x4040,
+                 message({0x21, 0x02, (uint8_t) ((target_low >> 8) & 0xFF), (uint8_t) (target_low & 0xFF)}),
+                 200);
+    ESP_LOGI(TAG, "** Climate Temp LOW - called");
+  } else if (call.get_target_temperature_high().has_value()) {
+    uint16_t target_high = *call.get_target_temperature_high() * 128;
+    this->query_(0x4040,
+                 message({0x20, 0x02, (uint8_t) ((target_high >> 8) & 0xFF), (uint8_t) (target_high & 0xFF)}),
+                 200);
+    ESP_LOGI(TAG, "** Climate Temp HiGH - called");
   }
+  // Set the fan mode
   if (call.get_fan_mode().has_value()) {
     uint8_t fan_mode = call.get_fan_mode().value();
     uint8_t fan_mode_out = 255;
@@ -89,6 +109,7 @@ void Madoka::control(const ClimateCall &call) {
         fan_mode_out = 0;
         break;
       case climate::CLIMATE_FAN_LOW:
+        ESP_LOGI(TAG, "Fan mode Low called");
         fan_mode_out = 1;
         break;
       case climate::CLIMATE_FAN_MEDIUM:
@@ -96,16 +117,46 @@ void Madoka::control(const ClimateCall &call) {
         break;
       case climate::CLIMATE_FAN_HIGH:
         fan_mode_out = 5;
+        ESP_LOGI(TAG, "Fan mode High called");
         break;
       default:
         ESP_LOGW(TAG, "Unsupported fan mode: %d", fan_mode);
         break;
     }
     if (fan_mode_out != 255) {
-      this->query_(0x4050, message({0x20, 0x01, (uint8_t) fan_mode_out, 0x21, 0x01, (uint8_t) fan_mode_out}), 200);
+      ESP_LOGI(TAG, "*** Fan mode ble out called");
+      if (this->cur_status_.mode == 4) {
+        // Update only the heating fan mode
+        ESP_LOGI(TAG, "*** Fan mode ble out called in HEAT MODE");
+        this->query_(0x4050, message({0x21, 0x01, (uint8_t) fan_mode_out}), 200);
+      } else if (this->cur_status_.mode == 3 || this->cur_status_.mode == 0) {
+        // Update only the cooling fan mode
+        ESP_LOGI(TAG, "*** Fan mode ble out called in COOL MODE");
+        this->query_(0x4050, message({0x20, 0x01, (uint8_t) fan_mode_out}), 200);
+      } else if (this->cur_status_.mode == 2) {
+        // If climate mode is heat_cool, update the fan mode based on the current temperature
+        ESP_LOGI(TAG, "*** Fan mode ble out called in HEAT_COOL (AUTO) MODE");
+        if (this->current_temperature <= this->target_temperature_low) {
+          // Set the heating fan speed
+          ESP_LOGI(TAG, "*** Fan mode ble out called in HEAT_COOL (AUTO) MODE in HEAT RANGE");
+          this->query_(0x4050, message({0x21, 0x01, (uint8_t) fan_mode_out}), 200);
+        } else if (this->current_temperature >= this->target_temperature_high) {
+          // Set the cooling fan speed
+          ESP_LOGI(TAG, "*** Fan mode ble out called in HEAT_COOL (AUTO) MODE in COOL RANGE");
+          this->query_(0x4050, message({0x20, 0x01, (uint8_t) fan_mode_out}), 200);
+        }
+      }
     }
   }
   this->should_update_ = true;
+}
+
+void Madoka::disable_clean_filter_indicator() {
+  if (this->node_state != espbt::ClientState::ESTABLISHED)
+    return;
+  // Command to disable the clean filter indicator
+  this->query_(0x4220, message({0x51, 0x01, 0x01}), 200);
+  ESP_LOGI(TAG, "Clean filter indicator dismissed");
 }
 
 void Madoka::gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param) {
@@ -364,10 +415,33 @@ void Madoka::parse_cb_(message msg) {
         uint8_t argument_id = msg[i++];
         uint8_t len = msg[i++];
         if (this->cur_status_.mode == 1) {
-        } else if ((argument_id == 0x21 && len == 1 && this->cur_status_.mode == 4) ||
-                   (argument_id == 0x20 && len == 1 && this->cur_status_.mode != 4)) {
-          fan_mode = msg[i];
-        }
+        // Skip parsing for DRY mode
+        } 
+        // If the climate mode is fan_only or cool mode and cooling fan mode received
+        else if ((this->cur_status_.mode == 0 || this->cur_status_.mode == 3) && argument_id == 0x20 && len == 1) {
+        fan_mode = msg[i];
+        ESP_LOGD(TAG, "Cooling fan mode received (0x20): %d", fan_mode);
+        } 
+        // If the climate mode is heat mode and heating fan mode received
+        else if (this->cur_status_.mode == 4 && argument_id == 0x21 && len == 1) {
+        fan_mode = msg[i];
+        ESP_LOGD(TAG, "Heating fan mode received (0x21): %d", fan_mode);
+        } 
+        // If the climate mode is heat_cool
+        else if (this->cur_status_.mode == 2) {
+        // Else if current temp <= target low temperature, then fan_mode is received heating fan mode
+          if (this->current_temperature <= this->target_temperature_low && argument_id == 0x21 && len == 1) {
+              fan_mode = msg[i];
+              ESP_LOGD(TAG, "Heating fan mode received (0x21) in AUTO mode: %d", fan_mode);
+              ESP_LOGI(TAG, "Auto Heat/Cool mode is currently in heat range");
+          } 
+          // Else if current temp >= target high temperature, then fan_mode is received cooling fan mode
+          else if (this->current_temperature >= this->target_temperature_high && argument_id == 0x20 && len == 1) {
+              fan_mode = msg[i];
+              ESP_LOGD(TAG, "Cooling fan mode received (0x20) in AUTO mode: %d", fan_mode);
+              ESP_LOGI(TAG, "Auto Heat/Cool mode is currently in cool range");
+          }
+        } 
         i += len;
       }
       switch (fan_mode) {
