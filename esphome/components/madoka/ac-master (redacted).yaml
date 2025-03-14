@@ -1,0 +1,463 @@
+esphome:
+  name: ac-master
+  # comment: Living Room, Master Bedroom
+  friendly_name: AC (MASTER UNITS)
+  platformio_options:
+    build_flags: "-DBOARD_HAS_PSRAM"  
+    board_build.flash_mode: dio
+    board_build.f_flash: 40000000L
+    board_build.flash_size: 4MB
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: ESP32S3
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      COMPILER_OPTIMIZATION_SIZE: "y"
+
+psram:
+  # mode: quad
+  # speed: 80MHz
+
+# Enable logging
+logger:
+  level: ERROR
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "XXXXXXXX"
+  # reboot_timeout: 0s
+  # password: ""
+
+ota:
+  platform: esphome
+  password: "XXXXXXXX"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "XXXXXXXX"
+    password: "XXXXXXXX"
+
+captive_portal:
+
+web_server:
+  port: 80
+  version: 3
+  log: true
+  css_include: "webserver-v1.min.css"
+#   js_url: "https://esphome.io/_static/webserver-v1.min.js"
+  js_include: "ac-master-custom.js"
+#   local: true
+  include_internal: false
+  sorting_groups:
+    - id: sorting_group_living_room_ac
+      name: "Living Room (Group 1 Master)"
+      sorting_weight: 10
+    - id: sorting_group_master_bedroom_ac
+      name: "Master Bedroom (Group 2 Master)"
+      sorting_weight: 20
+    # - id: sorting_group_guest_bedroom_ac
+    #   name: "Guest Bedroom (Group 2 Slave)"
+    #   sorting_weight: 30
+    # - id: sorting_group_study_ac
+    #   name: "Study (Group 2 Slave)"
+    #   sorting_weight: 40
+    - id: sorting_group_madoka
+      name: "Madoka Wi-fi Bridge (Master controllers)"
+      sorting_weight: 100
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: led_rgb_onboard
+    name: "on board light"
+    rgb_order: GRB
+    pin: GPIO21
+    num_leds: 1
+    rmt_channel: 0
+    chipset: ws2812
+    use_psram: true
+    default_transition_length: 0s
+    internal: true
+
+external_components:
+  - source: github://rawframe/esphome@madoka
+    components: [ madoka ]
+
+esp32_ble_tracker:
+
+esp32_ble:
+  io_capability: display_yes_no
+
+ble_client:
+  - mac_address: XXXXXXXX
+    id: living_room_ac
+    on_connect:
+      then:
+        - logger.log:
+            format: "Living Room AC Connected"
+            level: INFO
+        - script.execute: connection_status_light_script
+    on_disconnect:
+      then:
+        - logger.log:
+            format: "Living Room AC Disconnected"
+            level: ERROR
+        - script.execute: connection_status_light_script
+
+  - mac_address: XXXXXXXX
+    id: master_bedroom_ac
+    on_connect:
+      then:
+        - logger.log:
+            format: "Master Bedroom AC Connected"
+            level: INFO
+        - script.execute: connection_status_light_script
+    on_disconnect:
+      then:
+        - logger.log:
+            format: "Master Bedroom AC Disconnected"
+            level: ERROR
+        - script.execute: connection_status_light_script
+
+#   - mac_address: XXXXXXXX
+#     id: guest_bedroom_ac
+#     on_connect:
+#       then:
+#         - logger.log:
+#             format: "Guest Bedroom AC Connected"
+#             level: INFO
+#         - script.execute: connection_status_light_script
+#     on_disconnect:
+#       then:
+#         - logger.log:
+#             format: "Guest Bedroom AC Disconnected"
+#             level: ERROR
+#         - script.execute: connection_status_light_script
+
+#   - mac_address: XXXXXXXX
+#     id: study_ac
+#     on_connect:
+#       then:
+#         - logger.log:
+#             format: "Study AC Connected"
+#             level: INFO
+#         - script.execute: connection_status_light_script
+#     on_disconnect:
+#       then:
+#         - logger.log:
+#             format: "Study AC Disconnected"
+#             level: ERROR
+#         - script.execute: connection_status_light_script
+
+climate:
+  - platform: madoka
+    id: living_room_ac_climate
+    name: "Living Room"
+    web_server:
+      sorting_group_id: sorting_group_living_room_ac
+      sorting_weight: 11
+    ble_client_id: living_room_ac
+    update_interval: 15s
+    on_state:
+      - lambda: |-
+          auto fan_mode = x.fan_mode;
+          auto select_option = id(living_room_ac_fan_mode_select).state;
+          if ((fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH && select_option != "HIGH") ||
+              (fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_LOW && select_option != "LOW")) {
+            id(living_room_ac_fan_mode_select).publish_state(fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH ? "HIGH" : "LOW");
+          }
+      - script.execute: flash_green_script
+
+  - platform: madoka
+    id: master_bedroom_ac_climate
+    name: "Master Bedroom"
+    web_server:
+      sorting_group_id: sorting_group_master_bedroom_ac
+      sorting_weight: 21
+    ble_client_id: master_bedroom_ac
+    update_interval: 15s
+    on_state:
+      - lambda: |-
+          auto fan_mode = x.fan_mode;
+          auto select_option = id(master_bedroom_ac_fan_mode_select).state;
+          if ((fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH && select_option != "HIGH") ||
+              (fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_LOW && select_option != "LOW")) {
+            id(master_bedroom_ac_fan_mode_select).publish_state(fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH ? "HIGH" : "LOW");
+          }
+      - script.execute: flash_green_script
+
+#   - platform: madoka
+#     id: guest_bedroom_ac_climate
+#     name: "Guest Bedroom"
+#     web_server:
+#       sorting_group_id: sorting_group_guest_bedroom_ac
+#       sorting_weight: 31
+#     ble_client_id: guest_bedroom_ac
+#     update_interval: 15s
+#     on_state:
+#       - lambda: |-
+#           auto fan_mode = x.fan_mode;
+#           auto select_option = id(guest_bedroom_ac_fan_mode_select).state;
+#           if ((fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH && select_option != "HIGH") ||
+#               (fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_LOW && select_option != "LOW")) {
+#             id(guest_bedroom_ac_fan_mode_select).publish_state(fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH ? "HIGH" : "LOW");
+#           }
+#     - script.execute: flash_green_script
+  
+#   - platform: madoka
+#     id: study_ac_climate
+#     name: "Study"
+#     web_server:
+#       sorting_group_id: sorting_group_study_ac
+#       sorting_weight: 41
+#     ble_client_id: study_ac
+#     update_interval: 15s
+#     on_state:
+#       - lambda: |-
+#           auto fan_mode = x.fan_mode;
+#           auto select_option = id(study_ac_fan_mode_select).state;
+#           if ((fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH && select_option != "HIGH") ||
+#               (fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_LOW && select_option != "LOW")) {
+#             id(study_ac_fan_mode_select).publish_state(fan_mode == esphome::climate::ClimateFanMode::CLIMATE_FAN_HIGH ? "HIGH" : "LOW");
+#           }
+#       - script.execute: flash_green_script
+
+
+select:
+  - platform: template
+    name: "Living Room - Fan Speed"
+    id: living_room_ac_fan_mode_select
+    web_server:
+      sorting_group_id: sorting_group_living_room_ac
+      sorting_weight: 12
+    options:
+      - "HIGH"
+      - "LOW"
+    set_action:
+      - if:
+          condition:
+            lambda: 'return x == "HIGH";'
+          then:
+            - climate.control:
+                id: living_room_ac_climate
+                fan_mode: HIGH
+      - if:
+          condition:
+            lambda: 'return x == "LOW";'
+          then:
+            - climate.control:
+                id: living_room_ac_climate
+                fan_mode: LOW
+
+  - platform: template
+    name: "Master Bedroom - Fan Speed"
+    id: master_bedroom_ac_fan_mode_select
+    web_server:
+      sorting_group_id: sorting_group_master_bedroom_ac
+      sorting_weight: 22
+    options:
+      - "HIGH"
+      - "LOW"
+    set_action:
+      - if:
+          condition:
+            lambda: 'return x == "HIGH";'
+          then:
+            - climate.control:
+                id: master_bedroom_ac_climate
+                fan_mode: HIGH
+      - if:
+          condition:
+            lambda: 'return x == "LOW";'
+          then:
+            - climate.control:
+                id: master_bedroom_ac_climate
+                fan_mode: LOW
+  # 
+  # - platform: template
+  #   name: "Guest Bedroom - Fan Speed"
+  #   id: guest_bedroom_ac_fan_mode_select
+  #   web_server:
+  #     sorting_group_id: sorting_group_guest_bedroom_ac
+  #     sorting_weight: 32
+  #   options:
+  #     - "HIGH"
+  #     - "LOW"
+  #   set_action:
+  #     - if:
+  #         condition:
+  #           lambda: 'return x == "HIGH";'
+  #         then:
+  #           - climate.control:
+  #               id: guest_bedroom_ac_climate
+  #               fan_mode: HIGH
+  #     - if:
+  #         condition:
+  #           lambda: 'return x == "LOW";'
+  #         then:
+  #           - climate.control:
+  #               id: guest_bedroom_ac_climate
+  #               fan_mode: LOW
+  # 
+  # - platform: template
+  #   name: "Study - Fan Speed"
+  #   id: study_ac_fan_mode_select
+  #   web_server:
+  #     sorting_group_id: sorting_group_study_ac
+  #     sorting_weight: 42
+  #   options:
+  #     - "HIGH"
+  #     - "LOW"
+  #   set_action:
+  #     - if:
+  #         condition:
+  #           lambda: 'return x == "HIGH";'
+  #         then:
+  #           - climate.control:
+  #               id: study_ac_climate
+  #               fan_mode: HIGH
+  #     - if:
+  #         condition:
+  #           lambda: 'return x == "LOW";'
+  #         then:
+  #           - climate.control:
+  #               id: study_ac_climate
+  #               fan_mode: LOW
+
+script: 
+  - id: connection_status_light_script # blue = all controllers connected, amber=some controllers disconnected, red=all controllers disconnected
+    then:
+      - if:
+          condition:
+            and:
+              - lambda: 'return id(living_room_ac).connected();'
+              - lambda: 'return id(master_bedroom_ac).connected();'
+          then:
+            - logger.log:
+                format: "All Madoka controllers connected."
+                level: INFO
+            - light.turn_on:
+                id: led_rgb_onboard
+                brightness: 11%
+                color_mode: RGB
+                red: 0%
+                green: 0%
+                blue: 100%
+          else:
+            - if:
+                condition:
+                  or:
+                    - lambda: 'return id(living_room_ac).connected();'
+                    - lambda: 'return id(master_bedroom_ac).connected();'
+                then:
+                  - logger.log:
+                      format: "One or more Madoka controllers disconnected."
+                      level: ERROR
+                  - light.turn_on:
+                      id: led_rgb_onboard
+                      brightness: 16%
+                      color_mode: RGB
+                      red: 100%
+                      green: 75%
+                      blue: 0%
+                else:
+                  - logger.log: 
+                      format: "All Madoka controllers disconnected."
+                      level: ERROR
+                  - light.turn_on:
+                      id: led_rgb_onboard
+                      brightness: 12%
+                      color_mode: RGB
+                      red: 100%
+                      green: 0%
+                      blue: 0%
+                  
+  - id: flash_green_script # green = status change data sent or recieved
+    mode: parallel
+    max_runs: 3
+    then:
+      - script.wait: flash_purple_script
+      - light.turn_on:
+          id: led_rgb_onboard
+          flash_length: 25ms
+          brightness: 11%
+          color_mode: RGB
+          red: 0%
+          green: 100%
+          blue: 0%
+      - delay: 25ms
+      - script.execute: connection_status_light_script
+
+  - id: flash_purple_script #purple = dismiss clean filter notification sent   
+    then:
+      - light.turn_on:
+          id: led_rgb_onboard
+          flash_length: 500ms
+          brightness: 20%
+          color_mode: RGB
+          red: 63%
+          green: 13%
+          blue: 94%
+      - delay: 500ms
+      - script.execute: connection_status_light_script
+
+button:
+  - platform: restart
+    name: "Restart"
+    id: restart_wifi_master_controller
+    web_server:
+      sorting_group_id: sorting_group_madoka
+      sorting_weight: 102
+
+  - platform: shutdown
+    name: "Shutdown"
+    id: shutdown_wifi_master_controller
+    web_server:
+      sorting_group_id: sorting_group_madoka
+      sorting_weight: 103
+
+  - platform: template
+    name: "Living Room - Dismiss Clean Filter Notification"
+    web_server:
+      sorting_group_id: sorting_group_living_room_ac
+      sorting_weight: 13
+    on_press:
+      - lambda: |-
+          id(living_room_ac_climate).disable_clean_filter_indicator();
+      - script.execute: flash_purple_script
+
+  - platform: template
+    name: "Master Bedroom - Dismiss Clean Filter Notification"
+    web_server:
+      sorting_group_id: sorting_group_master_bedroom_ac
+      sorting_weight: 23
+    on_press:
+      - lambda: |-
+          id(master_bedroom_ac_climate).disable_clean_filter_indicator();
+      - script.execute: flash_purple_script
+
+#   - platform: template
+#     name: "Guest Bedroom - Dismiss Clean Filter Notification"
+#     web_server:
+#       sorting_group_id: sorting_group_guest_bedroom_ac
+#       sorting_weight: 33
+#     on_press:
+#       - lambda: |-
+#           id(guest_bedroom_ac_climate).disable_clean_filter_indicator();
+#       - script.execute: flash_purple_script
+  
+#   - platform: template
+#     name: "Study - Dismiss Clean Filter Notification"
+#     web_server:
+#       sorting_group_id: sorting_group_study_ac
+#       sorting_weight: 43
+#     on_press:
+#       - lambda: |-
+#           id(study_ac_climate).disable_clean_filter_indicator();
+#       - script.execute: flash_purple_script
