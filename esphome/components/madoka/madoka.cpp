@@ -328,7 +328,8 @@ void Madoka::query_(uint16_t cmd, message args, int t_d) {
                j + 1, BLE_SEND_MAX_RETRIES, status);
     }
     if (status) {
-      ESP_LOGE(TAG, "[%s] Command could not be sent, last status=%d", this->parent_->address_str().c_str(), status);
+      // ESP_LOGE(TAG, "[%s] Command could not be sent, last status=%d", this->parent_->address_str().c_str(), status);
+      ESP_LOGE(TAG, "[%s] Command could not be sent, last status=%d", this->parent_->address_str(), status);
       return;
     }
   }

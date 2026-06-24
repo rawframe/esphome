@@ -12,7 +12,7 @@ Madoka = madoka_ns.class_(
 )
 
 CONFIG_SCHEMA = (
-    climate.CLIMATE_SCHEMA.extend(
+    climate.climate_schema(climate.Climate).extend(
         {
             cv.GenerateID(): cv.declare_id(Madoka),
         }
